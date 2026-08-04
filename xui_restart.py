@@ -6,7 +6,7 @@ from pytz import timezone    # --> (sudo apt-get install python3-pytz) or (pip i
 
 
 mem_thr = 93
-cpu_thr = 99.7
+cpu_thr = 98.9
 
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
