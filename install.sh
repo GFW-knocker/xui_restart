@@ -53,30 +53,70 @@ echo "  └───────────────────────
 echo -e "${N}"
 
 # ------------------------------------------- python + dependency checks ------
+# Policy: only CHECK Python — never modify or upgrade an existing interpreter.
+# Install python3 / psutil / pytz ONLY when they are missing. If everything is
+# already present, apt is never invoked at all.
 export DEBIAN_FRONTEND=noninteractive
+APT_UPDATED=0
+apt_update_once() {
+    if [ "$APT_UPDATED" -eq 0 ]; then
+        apt-get update -y -qq
+        APT_UPDATED=1
+    fi
+    return 0
+}
 
-say "Checking Python and dependencies..."
-apt-get update -y -qq
-apt-get install -y -qq python3 curl ca-certificates
+# --- Python: check only; install just python3 if it does not exist. ---
+if command -v python3 >/dev/null 2>&1; then
+    PYBIN="$(command -v python3)"
+    ok "Python found: ${PYBIN} (v$("$PYBIN" -c 'import platform;print(platform.python_version())')) — leaving it untouched."
+else
+    warn "Python 3 not found — installing python3..."
+    apt_update_once
+    apt-get install -y -qq python3
+    PYBIN="$(command -v python3)" || die "python3 installation failed."
+    ok "Installed ${PYBIN}"
+fi
 
-# Preferred: distro packages (avoids PEP 668 'externally-managed' issues).
-apt-get install -y -qq python3-psutil python3-pytz || true
+# --- curl: needed to fetch the watchdog / run updates; install only if absent. ---
+if ! command -v curl >/dev/null 2>&1; then
+    warn "curl not found — installing curl..."
+    apt_update_once
+    apt-get install -y -qq curl
+fi
 
-PYBIN="$(command -v python3)"
+# --- Requirements: install ONLY the package(s) that are actually missing. ---
+MISSING=()
+"$PYBIN" -c 'import psutil' >/dev/null 2>&1 || MISSING+=("psutil")
+"$PYBIN" -c 'import pytz'   >/dev/null 2>&1 || MISSING+=("pytz")
 
-if ! "$PYBIN" -c 'import psutil, pytz' >/dev/null 2>&1; then
-    warn "psutil/pytz not available system-wide — creating a virtualenv..."
-    apt-get install -y -qq python3-venv python3-pip
-    mkdir -p "$APPDIR"
-    "$PYBIN" -m venv "$APPDIR/venv"
-    "$APPDIR/venv/bin/pip" install --quiet --upgrade pip
-    "$APPDIR/venv/bin/pip" install --quiet psutil pytz
-    PYBIN="$APPDIR/venv/bin/python3"
+if [ "${#MISSING[@]}" -eq 0 ]; then
+    ok "Requirements already present (psutil + pytz) — leaving them untouched."
+else
+    warn "Missing python package(s): ${MISSING[*]} — installing only these..."
+    apt_update_once
+    for pkg in "${MISSING[@]}"; do
+        # distro packages avoid PEP 668 'externally-managed' errors
+        apt-get install -y -qq "python3-${pkg}" || true
+    done
+
+    # If apt could not provide them, fall back to an isolated virtualenv.
+    # (System Python is still NOT modified — the venv only uses it as its base.)
+    if ! "$PYBIN" -c 'import psutil, pytz' >/dev/null 2>&1; then
+        warn "apt could not provide them — using an isolated virtualenv instead..."
+        apt_update_once
+        apt-get install -y -qq python3-venv python3-pip
+        mkdir -p "$APPDIR"
+        "$PYBIN" -m venv "$APPDIR/venv"
+        "$APPDIR/venv/bin/pip" install --quiet --upgrade pip
+        "$APPDIR/venv/bin/pip" install --quiet psutil pytz
+        PYBIN="$APPDIR/venv/bin/python3"
+    fi
 fi
 
 "$PYBIN" -c 'import psutil, pytz' >/dev/null 2>&1 \
-    || die "Could not install python deps (psutil, pytz). Check network/apt."
-ok "Python OK  ($("$PYBIN" -c 'import platform;print("Python "+platform.python_version())'))  psutil + pytz present."
+    || die "Could not satisfy requirements (psutil, pytz). Check network/apt."
+ok "Requirements OK — service will use interpreter: ${PYBIN}"
 
 # ------------------------------------------------ fetch watchdog script ------
 say "Fetching watchdog script..."

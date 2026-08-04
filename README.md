@@ -12,7 +12,7 @@ this script avoid this by restarting xray<br>
 free up memory before swaping/crash happen.<br>
 
 ### easy install (recommended) — Ubuntu/Debian VPS
-one line. it checks/installs python + requirements, then runs as a **systemd service that starts on boot**:<br>
+one line. it checks Python (installs it and psutil/pytz **only if missing** — it never touches or upgrades an existing Python), then runs as a **systemd service that starts on boot**:<br>
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/GFW-knocker/xui_restart/main/install.sh)
